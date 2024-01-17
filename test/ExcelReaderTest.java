@@ -3,10 +3,8 @@ package com.abilsys.oa.util;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.After;
 import org.junit.Before;
@@ -15,13 +13,10 @@ import org.junit.Test;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
@@ -40,9 +35,10 @@ public class ExcelReaderTest {
     public void printTest() {
         try {
 
-//            String filePath = "D:/file/test.xlsx";
-            String filePath = "D:/file/chs21_all.csv";
-//            List<Map<String, Object>> excelData = readExcelByXSSF(filePath);
+            String filePath = "D:/file/test.xlsx";
+//            String filePath = "D:/file/chs21_all.csv";
+//            String filePath = "D:/file/[지역사회건강조사] 테이블 정보.xls";
+            List<Map<String, Object>> excelData = readExcel(filePath);
 //            List<Map<String, Object>> excelData = readExcelByStream(filePath);
 
             Map<String, Object> tmpMap = new HashMap<>();
@@ -50,15 +46,15 @@ public class ExcelReaderTest {
             tmpMap.put("dataBeginRow", 1);
             tmpMap.put("dataBeginColumn", 1);
 
-            List<Map<String, Object>> csvData  = readCsvFile(tmpMap);
+//            List<Map<String, Object>> csvData  = readCSV(tmpMap);
 
             // 읽어온 데이터 확인
-            for (Map<String, Object> row : csvData ) {
+            for (Map<String, Object> row : excelData ) {
                 System.out.println(row);
             }
 
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -74,11 +70,18 @@ public class ExcelReaderTest {
 
     }
 
-    public static List<Map<String, Object>> readExcelByXSSF(String filePath) throws IOException {
+    public static List<Map<String, Object>> readExcel(String filePath) throws IOException {
         List<Map<String, Object>> dataList = new ArrayList<>();
 
-        try (FileInputStream fileInputStream = new FileInputStream(filePath);
-             Workbook workbook = new XSSFWorkbook(fileInputStream)) {
+        try (FileInputStream fileInputStream = new FileInputStream(filePath)) {
+            Workbook workbook;
+            if (filePath.endsWith(".xlsx")) {
+                workbook = new XSSFWorkbook(fileInputStream); // .xlsx 파일
+            } else if (filePath.endsWith(".xls")) {
+                workbook = new HSSFWorkbook(fileInputStream); // .xls 파일
+            } else {
+                throw new IllegalArgumentException("Unsupported file format");
+            }
 
             Sheet sheet = workbook.getSheetAt(0); // 첫 번째 시트를 읽어옴
 
@@ -101,15 +104,7 @@ public class ExcelReaderTest {
                     Cell cell = dataRow.getCell(colIndex);
                     String header = headers.get(colIndex);
 
-                    switch (cell.getCellType()) {
-                        case STRING:
-                            rowData.put(header, cell.getStringCellValue());
-                            break;
-                        case NUMERIC:
-                            rowData.put(header, cell.getNumericCellValue());
-                            break;
-                        // 다른 데이터 타입에 대한 처리도 추가 가능
-                    }
+                    rowData.put(header, getCellValue(cell));
                 }
 
                 dataList.add(rowData);
@@ -119,7 +114,7 @@ public class ExcelReaderTest {
         return dataList;
     }
 
-    public List<Map<String, Object>> readCsvFile(Map<String, Object> params) throws IOException {
+    public List<Map<String, Object>> readCSV(Map<String, Object> params) throws IOException {
         String filePath = String.valueOf(params.get("filePath"));
         int dataBeginRow = (int) params.get("dataBeginRow");
         int dataBeginColumn = (int) params.get("dataBeginColumn");
@@ -197,10 +192,27 @@ public class ExcelReaderTest {
                 return cell.getStringCellValue();
             case NUMERIC:
                 return cell.getNumericCellValue();
-            // 다른 데이터 타입에 대한 처리도 추가 가능
+            case FORMULA:
+                FormulaEvaluator evaluator = cell.getSheet().getWorkbook().getCreationHelper().createFormulaEvaluator();
+                DataFormatter dataFormatter = new DataFormatter();
+                return dataFormatter.formatCellValue(evaluator.evaluateInCell(cell));
+            case BOOLEAN:
+                return String.valueOf(cell.getNumericCellValue());
+            case BLANK:
+                return "";
+            case ERROR:
+                return String.valueOf(cell.getErrorCellValue());
             default:
                 return null;
         }
     }
 
+    private static String formatDate(Date date) {
+        if (date != null) {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+            return sdf.format(date);
+        } else {
+            return ""; // 값이 없는 경우 빈 문자열 반환
+        }
+    }
 }
